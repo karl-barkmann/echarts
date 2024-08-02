@@ -276,6 +276,7 @@ class TooltipHTMLContent {
      * Record long-time hide
      */
     private _longHideTimeout: number;
+    private _className: string;
 
     constructor(
         container: HTMLElement,
@@ -285,63 +286,72 @@ class TooltipHTMLContent {
         if (env.wxa) {
             return null;
         }
-
-        const el = document.createElement('div');
-        // TODO: TYPE
-        (el as any).domBelongToZr = true;
-        this.el = el;
         const zr = this._zr = api.getZr();
         const appendToBody = this._appendToBody = opt && opt.appendToBody;
-
         makeStyleCoord(this._styleCoord, zr, appendToBody, api.getWidth() / 2, api.getHeight() / 2);
 
-        if (appendToBody) {
-            document.body.appendChild(el);
-        }
-        else {
-            container.appendChild(el);
-        }
-
         this._container = container;
+    }
 
-        // FIXME
-        // Is it needed to trigger zr event manually if
-        // the browser do not support `pointer-events: none`.
+    _setup() {
+      if (this.el) {
+        return;
+      }
+      const el = document.createElement('div');
+      // TODO: TYPE
+      (el as any).domBelongToZr = true;
+      this.el = el;
+      if (this._className != null) {
+        this.el.className = this._className;
+      }
+      const appendToBody = this._appendToBody;
+      const container = this._container;
+      if (appendToBody) {
+          document.body.appendChild(el);
+      }
+      else {
+          container.appendChild(el);
+      }
 
-        const self = this;
-        el.onmouseenter = function () {
-            // clear the timeout in hideLater and keep showing tooltip
-            if (self._enterable) {
-                clearTimeout(self._hideTimeout);
-                self._show = true;
-            }
-            self._inContent = true;
-        };
-        el.onmousemove = function (e) {
-            e = e || (window as any).event;
-            if (!self._enterable) {
-                // `pointer-events: none` is set to tooltip content div
-                // if `enterable` is set as `false`, and `el.onmousemove`
-                // can not be triggered. But in browser that do not
-                // support `pointer-events`, we need to do this:
-                // Try trigger zrender event to avoid mouse
-                // in and out shape too frequently
-                const handler = zr.handler;
-                const zrViewportRoot = zr.painter.getViewportRoot();
-                normalizeEvent(zrViewportRoot, e as ZRRawEvent, true);
-                handler.dispatch('mousemove', e);
-            }
-        };
-        el.onmouseleave = function () {
-            // set `_inContent` to `false` before `hideLater`
-            self._inContent = false;
+      // FIXME
+      // Is it needed to trigger zr event manually if
+      // the browser do not support `pointer-events: none`.
 
-            if (self._enterable) {
-                if (self._show) {
-                    self.hideLater(self._hideDelay);
-                }
-            }
-        };
+      const self = this;
+      const zr = this._zr;
+      el.onmouseenter = function () {
+          // clear the timeout in hideLater and keep showing tooltip
+          if (self._enterable) {
+              clearTimeout(self._hideTimeout);
+              self._show = true;
+          }
+          self._inContent = true;
+      };
+      el.onmousemove = function (e) {
+          e = e || (window as any).event;
+          if (!self._enterable) {
+              // `pointer-events: none` is set to tooltip content div
+              // if `enterable` is set as `false`, and `el.onmousemove`
+              // can not be triggered. But in browser that do not
+              // support `pointer-events`, we need to do this:
+              // Try trigger zrender event to avoid mouse
+              // in and out shape too frequently
+              const handler = zr.handler;
+              const zrViewportRoot = zr.painter.getViewportRoot();
+              normalizeEvent(zrViewportRoot, e as ZRRawEvent, true);
+              handler.dispatch('mousemove', e);
+          }
+      };
+      el.onmouseleave = function () {
+          // set `_inContent` to `false` before `hideLater`
+          self._inContent = false;
+
+          if (self._enterable) {
+              if (self._show) {
+                  self.hideLater(self._hideDelay);
+              }
+          }
+      };
     }
 
     /**
@@ -365,7 +375,12 @@ class TooltipHTMLContent {
         this._alwaysShowContent = alwaysShowContent;
 
         // update className
-        this.el.className = tooltipModel.get('className') || '';
+        if (this.el) {
+          this.el.className = tooltipModel.get('className') || '';
+        }
+        else {
+          this._className = tooltipModel.get('className');
+        }
 
         // Hide the tooltip
         // PENDING
@@ -373,6 +388,7 @@ class TooltipHTMLContent {
     }
 
     show(tooltipModel: Model<TooltipOption>, nearPointColor: ZRColor) {
+        this._setup();
         clearTimeout(this._hideTimeout);
         clearTimeout(this._longHideTimeout);
         const el = this.el;
@@ -408,6 +424,7 @@ class TooltipHTMLContent {
         borderColor?: ZRColor,
         arrowPosition?: TooltipOption['position']
     ) {
+        this._setup();
         const el = this.el;
 
         if (content == null) {
@@ -509,8 +526,18 @@ class TooltipHTMLContent {
         return this._show;
     }
 
-    dispose() {
-        this.el.parentNode.removeChild(this.el);
+  dispose() {
+      if (this.el) {
+        this.el.onmouseenter = null;
+        this.el.onmouseleave = null;
+        this.el.onmousemove = null;
+        const parentNode = this.el.parentNode;
+        parentNode && parentNode.removeChild(this.el);
+      }
+      this._className = null;
+      clearTimeout(this._hideTimeout);
+      clearTimeout(this._longHideTimeout);
+      this.el = this._container = null;
     }
 
 }
